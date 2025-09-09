@@ -14,7 +14,7 @@ app.use(
   cors({
     origin:
       process.env.NODE_ENV === "production"
-        ? ["https://ashrafulislam.im"]
+        ? ["https://ashrafulislam.im", "https://getash.netlify.app"]
         : ["http://localhost:8080", "http://localhost:5173"],
     credentials: true,
   })
