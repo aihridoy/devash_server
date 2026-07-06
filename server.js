@@ -75,7 +75,7 @@ app.post("/api/contact", validateContactForm, async (req, res) => {
 
     // Send email using Resend
     const { data, error } = await resend.emails.send({
-      from: "Contact Form <onboarding@aihridoy.com>",
+      from: "Contact Form <onboarding@ashrafulislam.im>",
       to: [process.env.RECIPIENT_EMAIL],
       subject: `Contact Form: ${subject}`,
       html: `
