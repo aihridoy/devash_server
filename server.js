@@ -1,8 +1,13 @@
 const express = require("express");
 const cors = require("cors");
+const cookieParser = require("cookie-parser");
 const rateLimit = require("express-rate-limit");
 const { Resend } = require("resend");
 require("dotenv").config();
+
+const { createAuthRouter, requireEnvironment } = require("./auth");
+const { createPostsRouter } = require("./posts");
+const { triggerBuild } = require("./build-hook");
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -24,8 +29,12 @@ app.use(
     credentials: true,
   }),
 );
-app.use(express.json({ limit: "16kb" }));
+// A post's body is prose and can run long; the 16kb ceiling that suits a
+// contact form would reject a real article. Still bounded, so an unauthorised
+// caller cannot make the process chew on megabytes before auth runs.
+app.use(express.json({ limit: "512kb" }));
 app.use(express.urlencoded({ extended: true, limit: "16kb" }));
+app.use(cookieParser());
 
 /**
  * This endpoint is unauthenticated and spends money on every call: each request
@@ -236,6 +245,25 @@ Sent on ${new Date().toLocaleString()}
     }
   },
 );
+
+/**
+ * Admin and posts.
+ *
+ * Mounted only when the admin credentials are configured. A half-configured
+ * deploy that served /api/auth/login with no hash to compare against would be
+ * worse than one that serves no admin at all — the contact form, which is what
+ * this service exists for, keeps working either way.
+ */
+try {
+  requireEnvironment();
+
+  app.use("/api/auth", createAuthRouter());
+  app.use("/api/posts", createPostsRouter({ onPublish: triggerBuild }));
+
+  console.log("Admin auth and posts API mounted.");
+} catch (error) {
+  console.warn(`Admin routes not mounted: ${error.message}`);
+}
 
 // Health check endpoint
 app.get("/api/health", (req, res) => {
