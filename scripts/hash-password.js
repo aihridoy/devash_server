@@ -4,51 +4,89 @@
  *
  *   node scripts/hash-password.js
  *
- * The password is read from a hidden prompt rather than taken as an argument,
- * because an argument ends up in shell history, in `ps` output, and in any
+ * The password is typed at a prompt rather than passed as an argument,
+ * because an argument ends up in shell history, in `ps` output and in any
  * process listing on the machine. It is never written to disk here and never
  * printed back.
- *
- * Paste only the hash into Render. The hash is not a secret in the way the
- * password is — it cannot be reversed — but there is no reason to spread it
- * around either.
  */
 
 const bcrypt = require("bcryptjs");
+const crypto = require("node:crypto");
 const readline = require("node:readline");
 
 /** bcrypt work factor. 12 is roughly a quarter-second per attempt today. */
 const ROUNDS = 12;
 
-const askHidden = (question) =>
+/**
+ * Read a line from a terminal without echoing it.
+ *
+ * Raw mode means the terminal hands over each keystroke instead of drawing it,
+ * so nothing appears on screen and nothing lands in the scrollback. Two
+ * earlier attempts here drove readline instead: the first printed no prompt at
+ * all in VS Code's terminal, and the second only worked interactively —
+ * piped input reached end-of-file and closed the interface before the second
+ * question was asked, so the script exited silently mid-way.
+ */
+const askHiddenFromTty = (question) =>
   new Promise((resolve) => {
-    const rl = readline.createInterface({
-      input: process.stdin,
-      output: process.stdout,
-      terminal: true,
-    });
+    const { stdin, stdout } = process;
+    stdout.write(question);
 
-    // Swallow the echo so the password never appears on screen or in a
-    // scrollback someone else can read.
+    stdin.setRawMode(true);
+    stdin.resume();
+    stdin.setEncoding("utf8");
+
+    let value = "";
+
     const onData = (char) => {
-      if (["\n", "\r", ""].includes(char.toString())) {
-        process.stdin.removeListener("data", onData);
-        return;
+      switch (char) {
+        case "\n":
+        case "\r":
+        case "\u0004": // Ctrl-D
+          stdin.setRawMode(false);
+          stdin.pause();
+          stdin.removeListener("data", onData);
+          stdout.write("\n");
+          resolve(value);
+          break;
+        case "\u0003": // Ctrl-C should still cancel.
+          stdout.write("\n");
+          process.exit(130);
+          break;
+        case "\u007f": // Backspace
+        case "\b":
+          value = value.slice(0, -1);
+          break;
+        default:
+          // Ignore escape sequences from arrow keys and the like.
+          if (char >= " ") value += char;
       }
-      process.stdout.write("[2K[200D" + question);
     };
 
-    process.stdout.write(question);
-    process.stdin.on("data", onData);
+    stdin.on("data", onData);
+  });
 
-    rl.question("", (answer) => {
-      rl.close();
-      process.stdout.write("\n");
-      resolve(answer);
-    });
+/** Piped input, for testing. Nothing is hidden because nothing is typed. */
+const readPipedLines = () =>
+  new Promise((resolve) => {
+    const rl = readline.createInterface({ input: process.stdin });
+    const lines = [];
+    rl.on("line", (line) => lines.push(line));
+    rl.on("close", () => resolve(lines));
   });
 
 const main = async () => {
+  const piped = process.stdin.isTTY ? null : await readPipedLines();
+  let index = 0;
+
+  const askHidden = async (question) => {
+    if (piped) {
+      process.stdout.write(question + "\n");
+      return piped[index++] ?? "";
+    }
+    return askHiddenFromTty(question);
+  };
+
   const password = await askHidden("New admin password: ");
 
   if (password.length < 12) {
@@ -60,22 +98,23 @@ const main = async () => {
     process.exit(1);
   }
 
-  const confirmation = await askHidden("Type it again: ");
+  const confirmation = await askHidden("Type it again:      ");
+
   if (password !== confirmation) {
     console.error("\n  They do not match. Nothing was generated.\n");
     process.exit(1);
   }
 
   const hash = await bcrypt.hash(password, ROUNDS);
-  const secret = require("node:crypto").randomBytes(32).toString("hex");
+  const secret = crypto.randomBytes(32).toString("hex");
 
   console.log(
     [
       "",
-      "  Set these in Render (Environment tab). Neither belongs in git.",
+      "  Paste these into Render (Environment tab). Neither belongs in git.",
       "",
-      `  ADMIN_EMAIL=${process.env.ADMIN_EMAIL || "you@example.com"}`,
       `  ADMIN_PASSWORD_HASH=${hash}`,
+      "",
       `  SESSION_SECRET=${secret}`,
       "",
       "  The password itself was not stored anywhere by this script.",
