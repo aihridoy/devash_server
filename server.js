@@ -7,6 +7,7 @@ require("dotenv").config();
 
 const { createAuthRouter, requireEnvironment } = require("./auth");
 const { createPostsRouter } = require("./posts");
+const { createUploadsRouter } = require("./uploads");
 const { triggerBuild } = require("./build-hook");
 
 const app = express();
@@ -259,6 +260,7 @@ try {
 
   app.use("/api/auth", createAuthRouter());
   app.use("/api/posts", createPostsRouter({ onPublish: triggerBuild }));
+  app.use("/api/uploads", createUploadsRouter());
 
   console.log("Admin auth and posts API mounted.");
 } catch (error) {
