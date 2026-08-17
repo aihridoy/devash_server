@@ -162,8 +162,8 @@ const createPostsRouter = ({ onPublish }) => {
         throw error;
       }
 
-      if (post.status === "published") await onPublish();
-      res.status(201).json({ success: true, post: publicView(post) });
+      const build = post.status === "published" ? await onPublish() : undefined;
+      res.status(201).json({ success: true, post: publicView(post), build });
     } catch (error) {
       next(error);
     }
@@ -191,11 +191,12 @@ const createPostsRouter = ({ onPublish }) => {
 
       // A rebuild is needed whenever the live site's copy could now be stale:
       // publishing, editing something already published, or unpublishing it.
-      if (merged.status === "published" || existing.status === "published") {
-        await onPublish();
-      }
+      const build =
+        merged.status === "published" || existing.status === "published"
+          ? await onPublish()
+          : undefined;
 
-      res.json({ success: true, post: publicView(updated) });
+      res.json({ success: true, post: publicView(updated), build });
     } catch (error) {
       next(error);
     }
@@ -210,8 +211,8 @@ const createPostsRouter = ({ onPublish }) => {
         return res.status(404).json({ success: false, message: "No such post." });
       }
 
-      if (deleted.status === "published") await onPublish();
-      res.json({ success: true });
+      const build = deleted.status === "published" ? await onPublish() : undefined;
+      res.json({ success: true, build });
     } catch (error) {
       next(error);
     }
